@@ -1466,6 +1466,7 @@ func (a *Association) gatherOutboundFastRetransmissionPackets( //nolint:gocognit
 	bytesInPacket := 0
 	stopBundling := false
 
+	totalBytes := 0
 	srtt := time.Duration(a.SRTT()*1000.0) * time.Microsecond
 	for i := 0; ; i++ {
 		chunkPayload, ok := a.inflightQueue.get(a.cumulativeTSNAckPoint + uint32(i) + 1) //nolint:gosec // G115
@@ -1516,7 +1517,7 @@ func (a *Association) gatherOutboundFastRetransmissionPackets( //nolint:gocognit
 				continue
 			}
 
-			canSend, next := a.CC1.CanSend(uint32(addBytes), srtt)
+			canSend, next := a.CC1.CanSend(uint32(totalBytes+addBytes), srtt)
 			if !canSend {
 				// budget exhausted, stop selecting any more fast-rtx chunks
 				stopBundling = true
@@ -1526,6 +1527,7 @@ func (a *Association) gatherOutboundFastRetransmissionPackets( //nolint:gocognit
 
 				break
 			}
+			totalBytes += addBytes
 
 			if bytesInPacket == 0 {
 				bytesInPacket = int(commonHeaderSize)
@@ -3762,6 +3764,7 @@ func (a *Association) popPendingDataChunksToSend( //nolint:cyclop,gocognit
 
 	// track current packet size for MTU bundling so budgeting is accurate.
 	bytesInPacket := 0
+	totalBytes := 0
 
 	if a.pendingQueue.size() > 0 { //nolint:nestif
 		// RFC 4960 sec 6.1.  Transmission of DATA Chunks
@@ -3810,10 +3813,11 @@ func (a *Association) popPendingDataChunksToSend( //nolint:cyclop,gocognit
 				}
 
 				// reserve budget for common header + first chunk.
-				canSend, _ := a.CC1.CanSend(uint32(addBytes), srtt)
+				canSend, _ := a.CC1.CanSend(uint32(totalBytes+addBytes), srtt)
 				if !canSend {
 					break
 				}
+				totalBytes += addBytes
 
 				bytesInPacket = int(commonHeaderSize)
 			} else {
@@ -3825,10 +3829,11 @@ func (a *Association) popPendingDataChunksToSend( //nolint:cyclop,gocognit
 				}
 
 				// reserve budget for the additional chunk bytes.
-				canSend, _ := a.CC1.CanSend(uint32(addBytes), srtt)
+				canSend, _ := a.CC1.CanSend(uint32(totalBytes+addBytes), srtt)
 				if !canSend {
 					break
 				}
+				totalBytes += addBytes
 			}
 
 			a.setRWND(a.RWND() - dataLen)
@@ -3848,8 +3853,9 @@ func (a *Association) popPendingDataChunksToSend( //nolint:cyclop,gocognit
 				addBytes := int(commonHeaderSize) + chunkBytes
 
 				if addBytes <= int(a.MTU()) {
-					canSend, next := a.CC1.CanSend(uint32(addBytes), srtt)
+					canSend, next := a.CC1.CanSend(uint32(totalBytes+addBytes), srtt)
 					if canSend {
+						totalBytes += addBytes
 						a.movePendingDataChunkToInflightQueue(c)
 						chunks = append(chunks, c)
 					} else {
@@ -3862,7 +3868,7 @@ func (a *Association) popPendingDataChunksToSend( //nolint:cyclop,gocognit
 		}
 	}
 
-	a.CC1.OnSend(uint32(bytesInPacket))
+	a.CC1.OnSend(uint32(totalBytes))
 
 	if a.blockWrite && len(chunks) > 0 && a.pendingQueue.size() == 0 {
 		a.log.Tracef("[%s] all pending data have been sent, notify writable", a.name)
@@ -4005,6 +4011,7 @@ func (a *Association) getDataPacketsToRetransmit(budgetScaled *int64, consumed *
 
 	bytesInPacket := 0
 
+	totalBytes := 0
 	srtt := time.Duration(a.SRTT()*1000.0) * time.Microsecond
 	for i := 0; ; i++ {
 		chunkPayload, ok := a.inflightQueue.get(a.cumulativeTSNAckPoint + uint32(i) + 1) //nolint:gosec // G115
@@ -4039,13 +4046,14 @@ func (a *Association) getDataPacketsToRetransmit(budgetScaled *int64, consumed *
 			}
 
 			// burst budget gate before mutating the chunk.
-			canSend, next := a.CC1.CanSend(uint32(addBytes), srtt)
+			canSend, next := a.CC1.CanSend(uint32(totalBytes+addBytes), srtt)
 			if !canSend {
 				time.AfterFunc(next.Sub(currRtxTimestamp), func() {
 					a.awakeWriteLoop()
 				})
 				return a.bundleDataChunksIntoPackets(chunks)
 			}
+			totalBytes += addBytes
 
 			if bytesInPacket == 0 {
 				bytesInPacket = int(commonHeaderSize)
