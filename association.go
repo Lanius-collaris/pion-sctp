@@ -1762,8 +1762,8 @@ func (a *Association) gatherOutbound() ([][]byte, bool) {
 		consumed := false
 
 		rawPackets = a.gatherDataPacketsToRetransmit(rawPackets, &budgetUnits, &consumed)
-		rawPackets = a.gatherOutboundDataAndReconfigPackets(rawPackets, &budgetUnits, &consumed)
 		rawPackets = a.gatherOutboundFastRetransmissionPackets(rawPackets, &budgetUnits, &consumed)
+		rawPackets = a.gatherOutboundDataAndReconfigPackets(rawPackets, &budgetUnits, &consumed)
 
 		// control traffic shouldn't be limited.
 		rawPackets = a.gatherOutboundSackPackets(rawPackets)
