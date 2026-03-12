@@ -246,6 +246,7 @@ func getAssociationStateString(assoc uint32) string {
 type Association struct {
 	bytesReceived uint64
 	bytesSent     uint64
+	unackedBytes  uint32
 
 	lock sync.RWMutex
 
