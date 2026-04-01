@@ -3012,6 +3012,7 @@ func (a *Association) processAcknowledgement(
 	}
 
 	cumTSNAckPointAdvanced := false
+	srtt := time.Duration(a.SRTT()*1000.0) * time.Microsecond
 	if sna32LT(a.cumulativeTSNAckPoint, selectiveAckChunk.cumulativeTSNAck) {
 		a.log.Tracef("[%s] SACK: cumTSN advanced: %d -> %d",
 			a.name,
@@ -3020,8 +3021,10 @@ func (a *Association) processAcknowledgement(
 
 		a.cumulativeTSNAckPoint = selectiveAckChunk.cumulativeTSNAck
 		cumTSNAckPointAdvanced = true
-		srtt := time.Duration(a.SRTT()*1000.0) * time.Microsecond
 		a.onCumulativeTSNAckPointAdvanced(totalBytesAcked, rttSample, srtt)
+	} else {
+		a.CC1.OnACK(uint32(totalBytesAcked), rttSample, srtt)
+		a.setCWND(a.CC1.GetWindow())
 	}
 
 	for si, nBytesAcked := range bytesAckedPerStream {
