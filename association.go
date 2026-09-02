@@ -805,7 +805,7 @@ func createAssociationFromConfigWithTsn(cfg *Config, tsn uint32) *Association {
 		setWeightedFairQueueingStreamScheduler(interleaving)
 	}
 
-	cc1 := cc_alg.CreateReno(config.CwndCAStep)
+	cc1 := cc_alg.CreateReno(cfg.CwndCAStep)
 	assoc := &Association{
 		netConn:                   cfg.NetConn,
 		maxReceiveBufferSize:      maxReceiveBufferSize,
@@ -2694,31 +2694,31 @@ func (a *Association) processSelectiveAck(selectiveAckChunk *chunkSelectiveAck) 
 	if sna32LT(a.cumulativeTSNAckPoint, selectiveAckChunk.cumulativeTSNAck) {
 		firstTSN := a.cumulativeTSNAckPoint + 1
 		if _, ok := a.inflightQueue.get(firstTSN); !ok {
-			return nil, 0, time.Time{}, 0, false, fmt.Errorf("%w: %v", ErrInflightQueueTSNPop, firstTSN)
+			return nil, 0, time.Time{}, 0, false, rttSample, fmt.Errorf("%w: %v", ErrInflightQueueTSNPop, firstTSN)
 		}
 		if _, ok := a.inflightQueue.get(selectiveAckChunk.cumulativeTSNAck); !ok {
-			return nil, 0, time.Time{}, 0, false,
+			return nil, 0, time.Time{}, 0, false, rttSample,
 				fmt.Errorf("%w: %v", ErrInflightQueueTSNPop, selectiveAckChunk.cumulativeTSNAck)
 		}
 	}
 	for _, gap := range selectiveAckChunk.gapAckBlocks {
 		if gap.start == 0 {
-			return nil, 0, time.Time{}, 0, false,
+			return nil, 0, time.Time{}, 0, false, rttSample,
 				fmt.Errorf("%w: %v", ErrTSNRequestNotExist, selectiveAckChunk.cumulativeTSNAck)
 		}
 		if gap.start > gap.end {
-			return nil, 0, time.Time{}, 0, false,
+			return nil, 0, time.Time{}, 0, false, rttSample,
 				fmt.Errorf("%w: invalid Gap Ack Block %d-%d", ErrTSNRequestNotExist, gap.start, gap.end)
 		}
 
 		firstTSN := selectiveAckChunk.cumulativeTSNAck + uint32(gap.start)
 		if _, ok := a.inflightQueue.get(firstTSN); !ok {
-			return nil, 0, time.Time{}, 0, false, fmt.Errorf("%w: %v", ErrTSNRequestNotExist, firstTSN)
+			return nil, 0, time.Time{}, 0, false, rttSample, fmt.Errorf("%w: %v", ErrTSNRequestNotExist, firstTSN)
 		}
 		lastTSN := selectiveAckChunk.cumulativeTSNAck + uint32(gap.end)
 		if lastTSN != firstTSN {
 			if _, ok := a.inflightQueue.get(lastTSN); !ok {
-				return nil, 0, time.Time{}, 0, false,
+				return nil, 0, time.Time{}, 0, false, rttSample,
 					fmt.Errorf("%w: %v", ErrTSNRequestNotExist, lastTSN)
 			}
 		}
@@ -4041,8 +4041,6 @@ func (a *Association) getDataPacketsToRetransmit(budgetScaled *int64, consumed *
 			break
 		}
 		totalBytes += dataLen
-
-		chunkBytes := chunkPayload.chunkSizeInPacket()
 
 		// retry as first chunk in a new packet if needed.
 		/*for {
